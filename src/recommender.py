@@ -1,5 +1,6 @@
 """ToneMatch 1.0 — content-based music recommender."""
 import csv
+import math
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
@@ -46,24 +47,50 @@ class UserProfile:
 
 # ── Scoring constants ─────────────────────────────────────────────────────────
 #
-# Genre is the strongest categorical signal, while mood is a
-# useful secondary signal for session-level intent.
+# Fix 1 (Independence Fix): MAX_PTS for continuous variables raised so they
+#   can meaningfully compete with a categorical genre match. Energy + Valence +
+#   Inst now max at 4.5 pts vs. genre's 2.0.
+# Fix 4 (Balance Fix): POINTS_MODE_MISMATCH changed from -1.0 → 0.0.
+#   Reward-only mode scoring prevents a single key-feel miss from wiping out
+#   an otherwise strong genre + mood + energy alignment.
 #
 # Point budget breakdown:
-#   Categorical  (genre + mood + subgenre + mode) : max ~6.5 pts
-#   Continuous   (energy + valence + inst)        : max  3.5 pts
-#   Total maximum                                 : ~10.0 pts
+#   Categorical  (genre + mood + subgenre + mode) : max  6.0 pts
+#   Continuous   (energy + valence + inst)        : max  4.5 pts
+#   Total maximum                                 : ~10.5 pts
 
 POINTS_MOOD_EXACT     = 1.0   # mood == user.favorite_mood
 POINTS_MOOD_ADJACENT  = 0.5   # mood is semantically close to favorite
 POINTS_GENRE_EXACT    = 2.0   # genre == user.favorite_genre
+POINTS_GENRE_PARTIAL  = 1.0   # Fix 2: mapped genre (e.g. "bossa nova" → "jazz")
 POINTS_SUBGENRE_EXACT = 1.5   # subgenre match (stacks on genre match only)
 POINTS_MODE_MATCH     = 1.0   # song.mode == user.preferred_mode
-POINTS_MODE_MISMATCH  = -1.0  # wrong key feel penalty
+POINTS_MODE_MISMATCH  = 0.0   # Fix 4: was -1.0; reward-only prevents a 2-pt swing from one signal
 
-MAX_PTS_ENERGY  = 2.0   # full points when energy == target_energy
-MAX_PTS_VALENCE = 1.0   # full points when valence == target_valence
-MAX_PTS_INST    = 0.5   # full points when instrumentalness == target_inst
+MAX_PTS_ENERGY  = 2.5   # Fix 1: raised from 2.0
+MAX_PTS_VALENCE = 1.5   # Fix 1: raised from 1.0
+MAX_PTS_INST    = 0.5   # unchanged; multiplicative penalty handles extreme mismatches
+
+# Fix 3 (Gaussian Scoring): sigma controls bell-curve width.
+#   Smaller sigma → sharper peak (rewards precision more).
+#   At sigma=0.25, diff=0.25 earns ~61% of max_pts; diff=0.5 earns ~14%.
+#   Unlike linear decay, the score never hard-cuts to 0 — every song earns
+#   some proximity credit, letting the system differentiate "kind of neutral"
+#   from "perfectly neutral."
+PROXIMITY_SIGMA      = 0.25   # used for energy and valence
+PROXIMITY_SIGMA_INST = 0.20   # tighter for instrumentalness (more decisive signal)
+
+# Fix 1 (Independence Fix): Multiplicative penalty for extreme inst mismatch.
+#   If |song_inst - target_inst| > threshold, total score is multiplied by
+#   INST_PENALTY_FACTOR. This lets a "Lyric Lover" actually be penalised for
+#   getting a fully instrumental track, even if the genre/mood is perfect.
+INST_PENALTY_THRESHOLD = 0.70
+INST_PENALTY_FACTOR    = 0.60
+
+# Fix 5 (Soft Floor): A tiny energy-scaled epsilon replaces the hard 0.0 clamp.
+#   Prevents true score ties in the dead zone; ensures Python's stable sort
+#   always has a meaningful secondary signal to break on.
+SCORE_SOFT_FLOOR_BASE = 0.0001
 
 # Moods that are close enough to earn partial credit
 _ADJACENT_MOODS: Dict[str, set] = {
@@ -90,22 +117,71 @@ _ADJACENT_MOODS: Dict[str, set] = {
     "frantic":     {"intense", "aggressive"},
 }
 
+# Fix 2 (Semantic Fallback): Genre map from unrecognized / niche genres to the
+#   nearest catalog parent genre. When a user's favorite_genre is not in the
+#   catalog, we fall back to this map and award POINTS_GENRE_PARTIAL instead of
+#   POINTS_GENRE_EXACT. This prevents a hard-miss from silently zeroing the
+#   heaviest single signal.
+GENRE_MAP: Dict[str, str] = {
+    "bossa nova":       "jazz",
+    "brazilian jazz":   "jazz",
+    "samba":            "jazz",
+    "bebop":            "jazz",
+    "swing":            "jazz",
+    "blues":            "r&b",
+    "soul blues":       "soul",
+    "trap":             "hip-hop",
+    "drill":            "hip-hop",
+    "phonk":            "hip-hop",
+    "industrial":       "metal",
+    "black metal":      "metal",
+    "death metal":      "metal",
+    "hardcore":         "metal",
+    "post-rock":        "rock",
+    "emo":              "rock",
+    "shoegaze":         "rock",
+    "progressive rock": "rock",
+    "new wave":         "pop",
+    "synth pop":        "pop",
+    "k-pop":            "pop",
+    "chillwave":        "lofi",
+    "lo-fi":            "lofi",
+    "vaporwave":        "ambient",
+    "new age":          "ambient",
+    "drone":            "ambient",
+    "techno":           "edm",
+    "trance":           "edm",
+    "house":            "edm",
+    "dubstep":          "edm",
+    "garage":           "edm",
+    "flamenco":         "classical",
+    "baroque":          "classical",
+    "opera":            "classical",
+    "orchestra":        "classical",
+    "neoclassical":     "classical",
+}
+
 
 # ── Shared scoring helpers ────────────────────────────────────────────────────
 
 def _proximity(value: float, target: float, max_pts: float,
-               tolerance: float = 0.5) -> float:
+               sigma: float = PROXIMITY_SIGMA) -> float:
     """
-    Linear-decay proximity score.
-    Returns max_pts at a perfect match, decays to 0.0 at tolerance distance.
+    Fix 3 — Gaussian (RBF) proximity score.
+    Returns max_pts at a perfect match and decays as a bell curve away from
+    the target. Unlike the previous linear decay, this never hard-cuts to
+    zero — every song earns some credit, creating meaningful differentiation
+    even for neutral targets like 0.5.
 
-    Example (energy, max_pts=1.5, tolerance=0.5):
-      diff = 0.00 → 1.50 pts  (perfect match)
-      diff = 0.25 → 0.75 pts  (half tolerance)
-      diff = 0.50 → 0.00 pts  (at tolerance boundary)
-      diff > 0.50 → 0.00 pts  (clamped)
+    Formula: max_pts * exp( -(value - target)^2 / (2 * sigma^2) )
+
+    Example (energy, max_pts=2.5, sigma=0.25):
+      diff = 0.00 → 2.50 pts  (perfect match)
+      diff = 0.25 → 1.52 pts  (~61% — smooth decay)
+      diff = 0.50 → 0.34 pts  (meaningful but non-zero)
+      diff = 1.00 → 0.01 pts  (effectively negligible)
     """
-    return max(0.0, max_pts * (1.0 - abs(value - target) / tolerance))
+    return max_pts * math.exp(-((value - target) ** 2) / (2 * sigma ** 2))
 
 
 def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
@@ -127,6 +203,7 @@ def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
         hits.append(f"adjacent mood '{s_mood}' (+{POINTS_MOOD_ADJACENT})")
 
     # ── Genre + subgenre scoring ──────────────────────────────────────────────
+    # Fix 2: Exact match first; fall back to GENRE_MAP for partial credit.
     s_genre = song.get("genre", "")
     u_genre = user.get("favorite_genre", "")
     if s_genre == u_genre:
@@ -137,8 +214,17 @@ def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
             hits.append(
                 f"subgenre '{song.get('subgenre')}' match (+{POINTS_SUBGENRE_EXACT})"
             )
+    else:
+        mapped = GENRE_MAP.get(u_genre.lower(), "")
+        if mapped and s_genre == mapped:
+            score += POINTS_GENRE_PARTIAL
+            hits.append(
+                f"mapped genre '{u_genre}' → '{mapped}' (+{POINTS_GENRE_PARTIAL})"
+            )
 
     # ── Mode scoring (major / minor key feel) ─────────────────────────────────
+    # Fix 4: Reward-only. Mismatch earns 0 instead of -1.0, so a single
+    #   key-feel miss cannot override a strong genre + mood + energy alignment.
     s_mode = int(song.get("mode", -1))
     u_mode = int(user.get("preferred_mode", -1))
     key_label = "major" if s_mode == 1 else "minor"
@@ -146,14 +232,15 @@ def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
         score += POINTS_MODE_MATCH
         hits.append(f"{key_label} key match (+{POINTS_MODE_MATCH})")
     else:
-        score += POINTS_MODE_MISMATCH
-        hits.append(f"{key_label} key mismatch ({POINTS_MODE_MISMATCH})")
+        score += POINTS_MODE_MISMATCH   # 0.0 — no penalty, no reward
+        hits.append(f"{key_label} key mismatch (+{POINTS_MODE_MISMATCH})")
 
-    # ── Continuous proximity scores ───────────────────────────────────────────
+    # ── Continuous proximity scores (Fix 3: Gaussian RBF) ────────────────────
     e_pts = _proximity(
         float(song.get("energy", 0.5)),
         user.get("target_energy", 0.5),
         MAX_PTS_ENERGY,
+        sigma=PROXIMITY_SIGMA,
     )
     score += e_pts
     hits.append(
@@ -165,6 +252,7 @@ def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
         float(song.get("valence", 0.5)),
         user.get("target_valence", 0.5),
         MAX_PTS_VALENCE,
+        sigma=PROXIMITY_SIGMA,
     )
     score += v_pts
     hits.append(
@@ -172,19 +260,36 @@ def _score_dict(song: Dict, user: Dict) -> Tuple[float, List[str]]:
         f"(target {user.get('target_valence', 0.5):.2f}) +{v_pts:.2f}"
     )
 
+    song_inst = float(song.get("instrumentalness", 0.5))
+    target_inst = user.get("target_inst", 0.5)
     i_pts = _proximity(
-        float(song.get("instrumentalness", 0.5)),
-        user.get("target_inst", 0.5),
+        song_inst,
+        target_inst,
         MAX_PTS_INST,
-        tolerance=0.4,
+        sigma=PROXIMITY_SIGMA_INST,
     )
     score += i_pts
     hits.append(
-        f"inst {float(song.get('instrumentalness', 0)):.2f} "
-        f"(target {user.get('target_inst', 0.5):.2f}) +{i_pts:.2f}"
+        f"inst {song_inst:.2f} "
+        f"(target {target_inst:.2f}) +{i_pts:.2f}"
     )
 
-    return max(0.0, score), hits
+    # Fix 1: Multiplicative penalty for extreme instrumentalness mismatch.
+    #   After all additive signals are summed, if inst is far from target,
+    #   scale the whole score down. This lets "Lyric Lover" users actually
+    #   feel the difference instead of just missing 0.5 pts.
+    inst_diff = abs(song_inst - target_inst)
+    if inst_diff > INST_PENALTY_THRESHOLD:
+        score *= INST_PENALTY_FACTOR
+        hits.append(
+            f"inst penalty: diff {inst_diff:.2f} > {INST_PENALTY_THRESHOLD} "
+            f"→ score ×{INST_PENALTY_FACTOR}"
+        )
+
+    # Fix 5: Soft floor — energy-scaled epsilon prevents true 0.0 ties.
+    song_energy = float(song.get("energy", 0.5))
+    soft_floor = SCORE_SOFT_FLOOR_BASE * (1.0 + song_energy)
+    return max(soft_floor, score), hits
 
 
 def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
@@ -192,9 +297,12 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
     Score a single song dictionary against user preferences.
 
     Recipe:
-    - +2.0 points for a genre match
+    - +2.0 points for a genre match (or +1.0 for a mapped/partial genre match)
     - +1.0 point for a mood match
-    - +0.0 to +2.0 points for energy similarity
+    - +0.0 to +2.5 points for energy similarity (Gaussian)
+    - +0.0 to +1.5 points for valence similarity (Gaussian)
+    - +0.0 to +0.5 points for instrumentalness similarity (Gaussian)
+    - ×0.6 multiplier if instrumentalness diff > 0.7 (extreme mismatch penalty)
     """
     return _score_dict(song, user_prefs)
 
@@ -257,13 +365,18 @@ def recommend_songs(
     """
     Functional implementation of the recommendation logic.
     Required by src/main.py
+
+    Fix 5: Sorted by (score DESC, id ASC) so that when scores are equal or
+    near-equal after the soft floor, catalog order (lower id wins) is the
+    tiebreaker — deterministic and transparent.
     """
     scored = []
     for song in songs:
         score, reasons = score_song(user_prefs, song)
         scored.append((song, score, " | ".join(reasons)))
 
-    scored.sort(key=lambda x: x[1], reverse=True)
+    # Primary: score descending. Secondary: catalog id ascending (lower id wins ties).
+    scored.sort(key=lambda x: (x[1], -x[0]["id"]), reverse=True)
     return scored[:k]
 
 
@@ -286,7 +399,7 @@ class Recommender:
             (song, _score_song_obj(song, user)[0])
             for song in self.songs
         ]
-        scored.sort(key=lambda x: x[1], reverse=True)
+        scored.sort(key=lambda x: (x[1], -x[0].id), reverse=True)
         return [song for song, _ in scored[:k]]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
