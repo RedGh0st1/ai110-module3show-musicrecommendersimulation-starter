@@ -37,21 +37,21 @@ This system may over-prioritize genre and still miss songs that match the user's
 
 Each `Song` object stores the following attributes used during scoring:
 
-| Feature | Type | Description |
-| --- | --- | --- |
-| `id` | `int` | Unique track identifier |
-| `title` | `str` | Display name |
-| `artist` | `str` | Performing artist |
-| `genre` | `str` | Broad genre: `pop`, `rock`, `lofi`, `jazz`, `ambient`, `synthwave`, `indie pop` |
-| `subgenre` | `str` | Fine-grained label: `synth pop`, `hard rock`, `lofi hip-hop`, `lofi jazz`, `smooth jazz`, `space ambient`, `dance pop`, `darksynth`, `dream pop` |
-| `mood` | `str` | Vibe label: `happy`, `chill`, `intense`, `relaxed`, `focused`, `moody` |
-| `energy` | `float` | Perceived intensity — 0.0 (minimal) to 1.0 (maximum) |
-| `tempo_bpm` | `float` | Beats per minute |
-| `valence` | `float` | Emotional positivity — 0.0 (dark/sad) to 1.0 (bright/happy) |
-| `danceability` | `float` | Rhythmic strength and regularity — 0.0 to 1.0 |
-| `acousticness` | `float` | Organic vs. electronic texture — 0.0 to 1.0 |
-| `mode` | `int` | Key character — `0` minor (darker), `1` major (brighter) |
-| `instrumentalness` | `float` | Probability of no vocals — 0.0 (vocal) to 1.0 (instrumental) |
+| Feature            | Type    | Description                                                                                                                                      |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | `int`   | Unique track identifier                                                                                                                          |
+| `title`            | `str`   | Display name                                                                                                                                     |
+| `artist`           | `str`   | Performing artist                                                                                                                                |
+| `genre`            | `str`   | Broad genre: `pop`, `rock`, `lofi`, `jazz`, `ambient`, `synthwave`, `indie pop`                                                                  |
+| `subgenre`         | `str`   | Fine-grained label: `synth pop`, `hard rock`, `lofi hip-hop`, `lofi jazz`, `smooth jazz`, `space ambient`, `dance pop`, `darksynth`, `dream pop` |
+| `mood`             | `str`   | Vibe label: `happy`, `chill`, `intense`, `relaxed`, `focused`, `moody`                                                                           |
+| `energy`           | `float` | Perceived intensity — 0.0 (minimal) to 1.0 (maximum)                                                                                             |
+| `tempo_bpm`        | `float` | Beats per minute                                                                                                                                 |
+| `valence`          | `float` | Emotional positivity — 0.0 (dark/sad) to 1.0 (bright/happy)                                                                                      |
+| `danceability`     | `float` | Rhythmic strength and regularity — 0.0 to 1.0                                                                                                    |
+| `acousticness`     | `float` | Organic vs. electronic texture — 0.0 to 1.0                                                                                                      |
+| `mode`             | `int`   | Key character — `0` minor (darker), `1` major (brighter)                                                                                         |
+| `instrumentalness` | `float` | Probability of no vocals — 0.0 (vocal) to 1.0 (instrumental)                                                                                     |
 
 ---
 
@@ -59,17 +59,17 @@ Each `Song` object stores the following attributes used during scoring:
 
 Each `UserProfile` stores a **target value** for every continuous feature — the ideal point on that scale — rather than a hard filter. Songs whose feature values fall closest to these targets score highest.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `favorite_genre` | `str` | Preferred broad genre for categorical match bonus |
-| `favorite_mood` | `str` | Preferred session mood for categorical match bonus |
-| `target_energy` | `float` | Ideal energy level (0.0 – 1.0) |
-| `target_valence` | `float` | Ideal emotional positivity (0.0 – 1.0) |
-| `target_bpm` | `float` | Preferred tempo in beats per minute |
-| `target_acoustic` | `float` | Preferred acoustic texture (0.0 – 1.0) |
-| `target_inst` | `float` | Preferred instrumentalness — set near `1.0` for focus/study sessions |
-| `preferred_mode` | `int` | Preferred key feel — `0` minor, `1` major |
-| `likes_acoustic` | `bool` | Shorthand flag used as a hard filter for acoustic preference |
+| Field             | Type    | Description                                                          |
+| ----------------- | ------- | -------------------------------------------------------------------- |
+| `favorite_genre`  | `str`   | Preferred broad genre for categorical match bonus                    |
+| `favorite_mood`   | `str`   | Preferred session mood for categorical match bonus                   |
+| `target_energy`   | `float` | Ideal energy level (0.0 – 1.0)                                       |
+| `target_valence`  | `float` | Ideal emotional positivity (0.0 – 1.0)                               |
+| `target_bpm`      | `float` | Preferred tempo in beats per minute                                  |
+| `target_acoustic` | `float` | Preferred acoustic texture (0.0 – 1.0)                               |
+| `target_inst`     | `float` | Preferred instrumentalness — set near `1.0` for focus/study sessions |
+| `preferred_mode`  | `int`   | Preferred key feel — `0` minor, `1` major                            |
+| `likes_acoustic`  | `bool`  | Shorthand flag used as a hard filter for acoustic preference         |
 
 ---
 
@@ -83,6 +83,8 @@ Each `UserProfile` stores a **target value** for every continuous feature — th
    python -m venv .venv
    source .venv/bin/activate      # Mac or Linux
    .venv\Scripts\activate         # Windows
+
+   ```
 
 2. Install dependencies
 
@@ -143,12 +145,11 @@ Write 1 to 2 paragraphs here about what you learned:
 - about how recommenders turn data into predictions
 - about where bias or unfairness could show up in systems like this
 
-
 ---
 
 ## 7. `model_card_template.md`
 
-Combines reflection and model card framing from the Module 3 guidance. :contentReference[oaicite:2]{index=2}  
+Combines reflection and model card framing from the Module 3 guidance. :contentReference[oaicite:2]{index=2}
 
 ```markdown
 # 🎧 Model Card - Music Recommender Simulation
@@ -200,6 +201,7 @@ Describe your dataset.
 Where does your recommender work well
 
 You can think about:
+
 - Situations where the top results "felt right"
 - Particular user profiles it served well
 - Simplicity or transparency benefits
@@ -211,6 +213,7 @@ You can think about:
 Where does your recommender struggle
 
 Some prompts:
+
 - Does it ignore some genres or moods
 - Does it treat all users as if they have the same taste shape
 - Is it biased toward high energy or one genre by default
@@ -223,6 +226,7 @@ Some prompts:
 How did you check your system
 
 Examples:
+
 - You tried multiple user profiles and wrote down whether the results matched your expectations
 - You compared your simulation to what a real app like Spotify or YouTube tends to recommend
 - You wrote tests for your scoring logic
@@ -250,4 +254,4 @@ A few sentences about what you learned:
 - What surprised you about how your system behaved
 - How did building this change how you think about real music recommenders
 - Where do you think human judgment still matters, even if the model seems "smart"
-
+```
