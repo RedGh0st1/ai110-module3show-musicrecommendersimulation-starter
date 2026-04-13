@@ -12,12 +12,15 @@ class Song:
     title: str
     artist: str
     genre: str
+    subgenre: str
     mood: str
     energy: float
     tempo_bpm: float
     valence: float
     danceability: float
     acousticness: float
+    mode: int        # 0 = minor, 1 = major
+    instrumentalness: float
 
 @dataclass
 class UserProfile:
