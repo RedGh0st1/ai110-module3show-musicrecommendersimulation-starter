@@ -88,6 +88,21 @@ Prompts:
 
 No need for numeric metrics unless you created some.
 
+**Profiles Tested.**
+Nine user profiles were run against the 25-song catalog: three standard profiles (High-Energy Pop, Chill Lo-Fi, Deep Intense Rock) and six adversarial profiles designed to stress-test the scoring logic. The adversarial profiles included The Contradiction (high energy paired with a sad mood preference), The Genre Ghost (a genre not present in the catalog), The Agnostic (every numeric target set to the neutral midpoint of 0.5), The Minor Happy (a cheerful mood preference paired with a minor-key preference), The Lyric Lover (a user who wants fully instrumental music), and The Mismatch Maximizer (extreme preferences designed to push most songs toward a score of zero). Beyond profile testing, two structural experiments were run: a weight shift that doubled the importance of energy and halved the importance of genre, and a feature removal test that disabled the mood signal entirely to observe what the remaining signals would recommend on their own.
+
+**What We Looked For.**
+For each profile the evaluation checked whether the top-ranked song was intuitively correct, whether the score breakdown explained the ranking in a way a real listener would recognize as fair, and whether any song appeared in the top five for reasons that felt accidental rather than meaningful.
+
+**What Surprised Us.**
+The most unexpected result came from the High-Energy Pop profile. Gym Hero ranked first even though its mood is tagged as "intense" rather than "happy" — the user's stated preference. It won because a subgenre match ("dance pop") awards more points than a mood match, so a song that felt right on paper but wrong in practice claimed the top spot. A pop dance song labeled "intense" is arguably still a good recommendation, but the system arrived there for the wrong reason: it never evaluated whether intense and happy are compatible moods, only whether the subgenre string matched exactly.
+
+The Genre Ghost profile produced the second notable surprise. Before the genre mapping fix was in place, a user who preferred "bossa nova" received recommendations with no connection to jazz whatsoever, and the score output gave no indication that anything had gone wrong. The system silently defaulted to whichever songs scored well on energy and mode, which happened to include a lo-fi track and an ambient track. Adding a genre map fixed the top result immediately, but the experience of running the broken version made clear how invisible catalog gaps are to a user reading a ranked list.
+
+The weight shift experiment produced a result that was surprising in a different way. When energy was made twice as important and genre was halved, a salsa song (Salsa Fuego) entered the top five for a pop listener purely because its energy value was a perfect numerical match. The recommendation was technically defensible — the energy score was higher than any other song in the catalog — but recommending salsa to someone who said their favorite genre is pop illustrates that numerical accuracy and genuine musical fit are not the same thing. A number can be right while the recommendation is wrong.
+
+Finally, removing the mood signal entirely had almost no effect on the Chill Lo-Fi profile. The top three songs remained identical. This revealed that mood was functioning as a small additive bonus in that profile rather than a meaningful differentiator — the genre and energy signals were already doing all the sorting work, and mood was decorative. That was not expected going in, and it raises the question of whether mood is earning its place in the scoring formula for listeners whose genre preference already implies a mood.
+
 ---
 
 ## 8. Future Work  
