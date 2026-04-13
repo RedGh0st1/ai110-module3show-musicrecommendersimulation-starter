@@ -17,7 +17,19 @@ Replace this paragraph with your own summary of what your version does.
 
 ## How The System Works
 
-Real-world music recommenders rely on two core strategies: **Content-Based Filtering**, which scores songs by comparing their measurable attributes (tempo, energy, mood) against a user's stated preferences, and **Collaborative Filtering**, which surfaces songs that users with similar listening histories have enjoyed. Production systems like Spotify and YouTube layer both approaches — collaborative signals provide breadth and serendipity, while content signals provide precision and work even for brand-new tracks with no listening history. **ToneMatch 1.0 prioritizes a Hybrid Content-Based approach**: it constructs a numerical preference vector from the `UserProfile` and scores every song in the library by computing the mathematical *distance* between that vector and each song's feature vector, using a Gaussian decay function so that a perfect match scores `1.0` and mismatched songs decay smoothly toward `0.0`. A second-stage listwise ranking pass then re-orders the top candidates to ensure diversity, avoid artist repetition, and surface novelty — reflecting the same two-stage retrieval and ranking architecture used in production recommenders.
+This recommender reads every song from `data/songs.csv`, then scores each one against the user profile. The scoring logic is content-based: it compares categorical preferences like genre and mood, plus continuous targets such as energy and valence, to compute a numeric score for every candidate song. After scoring all songs, the system sorts them by score and returns the top `k` recommendations.
+
+### Algorithm Recipe
+
+- `+2.0` points for a genre match
+- `+1.0` point for a mood match
+- `+0.0 to +2.0` points for energy similarity based on how close `song.energy` is to `target_energy`
+
+The continuous similarity bonus is computed with a linear decay from perfect match to a threshold distance, so the closest songs get the strongest energy boost.
+
+### Potential Biases
+
+This system may over-prioritize genre and still miss songs that match the user's mood or energy better. It also treats the dataset as if every user preference is equally reliable, which can bias the ranking toward popular or dominant genre labels rather than more subtle or underrepresented moods.
 
 ---
 
