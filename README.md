@@ -17,17 +17,47 @@ Replace this paragraph with your own summary of what your version does.
 
 ## How The System Works
 
-Explain your design in plain language.
+Real-world music recommenders rely on two core strategies: **Content-Based Filtering**, which scores songs by comparing their measurable attributes (tempo, energy, mood) against a user's stated preferences, and **Collaborative Filtering**, which surfaces songs that users with similar listening histories have enjoyed. Production systems like Spotify and YouTube layer both approaches — collaborative signals provide breadth and serendipity, while content signals provide precision and work even for brand-new tracks with no listening history. **ToneMatch 1.0 prioritizes a Hybrid Content-Based approach**: it constructs a numerical preference vector from the `UserProfile` and scores every song in the library by computing the mathematical *distance* between that vector and each song's feature vector, using a Gaussian decay function so that a perfect match scores `1.0` and mismatched songs decay smoothly toward `0.0`. A second-stage listwise ranking pass then re-orders the top candidates to ensure diversity, avoid artist repetition, and surface novelty — reflecting the same two-stage retrieval and ranking architecture used in production recommenders.
 
-Some prompts to answer:
+---
 
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
+### Song Features
 
-You can include a simple diagram or bullet list if helpful.
+Each `Song` object stores the following attributes used during scoring:
+
+| Feature | Type | Description |
+| --- | --- | --- |
+| `id` | `int` | Unique track identifier |
+| `title` | `str` | Display name |
+| `artist` | `str` | Performing artist |
+| `genre` | `str` | Broad genre: `pop`, `rock`, `lofi`, `jazz`, `ambient`, `synthwave`, `indie pop` |
+| `subgenre` | `str` | Fine-grained label: `synth pop`, `hard rock`, `lofi hip-hop`, `lofi jazz`, `smooth jazz`, `space ambient`, `dance pop`, `darksynth`, `dream pop` |
+| `mood` | `str` | Vibe label: `happy`, `chill`, `intense`, `relaxed`, `focused`, `moody` |
+| `energy` | `float` | Perceived intensity — 0.0 (minimal) to 1.0 (maximum) |
+| `tempo_bpm` | `float` | Beats per minute |
+| `valence` | `float` | Emotional positivity — 0.0 (dark/sad) to 1.0 (bright/happy) |
+| `danceability` | `float` | Rhythmic strength and regularity — 0.0 to 1.0 |
+| `acousticness` | `float` | Organic vs. electronic texture — 0.0 to 1.0 |
+| `mode` | `int` | Key character — `0` minor (darker), `1` major (brighter) |
+| `instrumentalness` | `float` | Probability of no vocals — 0.0 (vocal) to 1.0 (instrumental) |
+
+---
+
+### UserProfile Features
+
+Each `UserProfile` stores a **target value** for every continuous feature — the ideal point on that scale — rather than a hard filter. Songs whose feature values fall closest to these targets score highest.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `favorite_genre` | `str` | Preferred broad genre for categorical match bonus |
+| `favorite_mood` | `str` | Preferred session mood for categorical match bonus |
+| `target_energy` | `float` | Ideal energy level (0.0 – 1.0) |
+| `target_valence` | `float` | Ideal emotional positivity (0.0 – 1.0) |
+| `target_bpm` | `float` | Preferred tempo in beats per minute |
+| `target_acoustic` | `float` | Preferred acoustic texture (0.0 – 1.0) |
+| `target_inst` | `float` | Preferred instrumentalness — set near `1.0` for focus/study sessions |
+| `preferred_mode` | `int` | Preferred key feel — `0` minor, `1` major |
+| `likes_acoustic` | `bool` | Shorthand flag used as a hard filter for acoustic preference |
 
 ---
 

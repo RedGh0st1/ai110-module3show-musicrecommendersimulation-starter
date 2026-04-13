@@ -31,6 +31,11 @@ class UserProfile:
     favorite_genre: str
     favorite_mood: str
     target_energy: float
+    target_valence: float
+    target_bpm: float
+    target_acoustic: float
+    target_inst: float
+    preferred_mode: int   # 0 = minor, 1 = major
     likes_acoustic: bool
 
 class Recommender:
